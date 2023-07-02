@@ -1,5 +1,4 @@
-use std::borrow::BorrowMut;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::net::TcpStream;
 use std::time::Duration;
 use std::{net::TcpListener, thread};
@@ -17,7 +16,7 @@ use std::{net::TcpListener, thread};
 
 use std::sync::mpsc;
 
-use chat::HttpRequestValidationErr;
+use chat::*;
 
 fn main() {
     let (tx, rx) = mpsc::channel();
@@ -53,7 +52,27 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), HttpRequestValidationE
     let request = chat::HttpRequest::from_stream(&stream);
     println!("REQUEST: {:#?}", request);
 
-    let response = "HTTP/1.1 200 OK\r\n\r\nHowdy\r\n";
+    let response = match request {
+        Ok(HttpRequest {
+            method: _,
+            resource: _,
+            headers: _,
+            body: Some(req_body),
+            version: _,
+        }) => {
+            format!("HTTP/1.1 200 ok\r\n\r\n{}\r\n", req_body)
+        }
+        Ok(_) => {
+            let message = "<No body provided>";
+            format!("HTTP/1.1 200 ok\r\n\r\n{}\r\n", message)
+        }
+        Err(_) => {
+            // todo!("Match the error type here to provide better feedback");
+            let message = "No idea what you just sent my man";
+            format!("HTTP/1.1 400 request_malformed\r\n\r\n{}\r\n", message)
+        }
+    };
+
     stream.write_all(response.as_bytes()).unwrap();
     println!("RESPONSE: {:#?}", response);
 

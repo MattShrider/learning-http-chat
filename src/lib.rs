@@ -1,5 +1,4 @@
 use std::{
-    borrow::{Borrow, BorrowMut},
     collections::HashMap,
     io::{BufRead, BufReader, Read},
     mem::size_of,
@@ -45,7 +44,7 @@ impl HttpMethod {
 }
 
 #[derive(Debug)]
-enum HttpVersion {
+pub enum HttpVersion {
     Http1_1,
     Http2,
 }
@@ -56,6 +55,13 @@ impl HttpVersion {
             "HTTP/1.1" => Ok(HttpVersion::Http1_1),
             "HTTP/2" => Ok(HttpVersion::Http2),
             _ => Err(HttpRequestValidationErr::HttpVersionMalformed),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            HttpVersion::Http1_1 => "HTTP/1.1",
+            HttpVersion::Http2 => "HTTP/2",
         }
     }
 }
@@ -144,22 +150,13 @@ impl HttpHeaders {
 #[derive(Debug)]
 struct HttpBody(Option<String>);
 
-impl HttpBody {
-    fn parse_lines<T>(lines: &mut T) -> Vec<String>
-    where
-        T: Iterator<Item = String>,
-    {
-        lines.take_while(|line| !line.is_empty()).collect()
-    }
-}
-
 #[derive(Debug)]
 pub struct HttpRequest {
-    method: HttpMethod,
-    resource: String,
-    headers: HttpHeaders,
-    body: String,
-    version: HttpVersion,
+    pub method: HttpMethod,
+    pub resource: String,
+    pub headers: HttpHeaders,
+    pub body: Option<String>,
+    pub version: HttpVersion,
 }
 
 // Completely arbitrary DOS protection
@@ -189,9 +186,11 @@ impl HttpRequest {
                 stream_reader
                     .read_exact(&mut buf)
                     .map_err(|_| HttpRequestValidationErr::BodyMalformed)?;
-                String::from_utf8(buf).map_err(|_| HttpRequestValidationErr::BodyMalformed)
+                let body =
+                    String::from_utf8(buf).map_err(|_| HttpRequestValidationErr::BodyMalformed)?;
+                Ok(if body.is_empty() { None } else { Some(body) })
             }
-            _ => Ok("".to_owned()),
+            _ => Ok(None),
         }?;
         // let body = HttpBody::parse_lines(lines_iter);
 
