@@ -16,7 +16,7 @@ use std::{net::TcpListener, thread};
 
 use std::sync::mpsc;
 
-use chat::*;
+use learning_http_chat::*;
 
 fn main() {
     let (tx, rx) = mpsc::channel();
@@ -49,7 +49,7 @@ fn handle_connection(mut stream: TcpStream) -> Result<(), HttpRequestValidationE
     stream.set_write_timeout(STREAM_TIMEOUT).unwrap();
     println!("Connection Established with {:?}", stream);
 
-    let request = chat::HttpRequest::from_stream(&stream);
+    let request = learning_http_chat::HttpRequest::from_stream(&stream);
     println!("REQUEST: {:#?}", request);
 
     let response = match request {
