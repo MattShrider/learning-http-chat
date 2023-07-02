@@ -1,4 +1,13 @@
-use std::{borrow::BorrowMut, collections::HashMap};
+use std::{
+    borrow::{Borrow, BorrowMut},
+    collections::HashMap,
+    io::{BufRead, BufReader, Read},
+    mem::size_of,
+    net::TcpStream,
+};
+
+/// Default capacity when reading lines
+const BUF_CAPACTIY: usize = 50 * size_of::<char>();
 
 #[derive(Debug)]
 pub enum HttpRequestValidationErr {
@@ -59,13 +68,17 @@ struct HttpMethodSection {
 }
 
 impl HttpMethodSection {
-    fn parse_lines<T>(lines: &mut T) -> Result<Self, HttpRequestValidationErr>
-    where
-        T: Iterator<Item = String>,
-    {
-        let head: String = lines.next().ok_or(HttpRequestValidationErr::Headline)?;
-        let mut head_iter = head.split_whitespace();
+    fn parse_lines<T: BufRead>(reader: &mut T) -> Result<Self, HttpRequestValidationErr> {
+        let mut buffer = String::with_capacity(BUF_CAPACTIY);
+        let bytes_read = reader
+            .read_line(&mut buffer)
+            .map_err(|_| HttpRequestValidationErr::Headline)?;
 
+        if bytes_read == 0 {
+            return Err(HttpRequestValidationErr::Headline);
+        }
+
+        let mut head_iter = buffer.split_whitespace();
         let method = head_iter
             .next()
             .map(HttpMethod::parse)
@@ -91,16 +104,25 @@ impl HttpMethodSection {
 pub struct HttpHeaders(HashMap<String, Vec<String>>);
 
 impl HttpHeaders {
-    fn parse_lines<T>(lines_iter: &mut T) -> Result<Self, HttpRequestValidationErr>
-    where
-        T: Iterator<Item = String>,
-    {
+    pub fn get(&self, key: &str) -> Option<&Vec<String>> {
+        self.0.get(&key.to_string().to_lowercase())
+    }
+
+    fn parse_lines<T: BufRead>(reader: &mut T) -> Result<Self, HttpRequestValidationErr> {
         let mut map: HashMap<String, Vec<String>> = HashMap::new();
-        for line in lines_iter {
-            if line.is_empty() {
+
+        let mut buffer = String::with_capacity(BUF_CAPACTIY);
+        loop {
+            buffer.clear();
+            let bytes_read = reader
+                .read_line(&mut buffer)
+                .map_err(|_| HttpRequestValidationErr::HeadersMalformed)?;
+            let line = buffer.trim();
+            if bytes_read == 0 || line.is_empty() {
                 break;
             }
-            let mut words = line.split(':').map(|w| w.trim().to_owned());
+
+            let mut words = line.split(':').map(|w| w.trim().to_owned().to_lowercase());
             let key = words
                 .next()
                 .ok_or(HttpRequestValidationErr::HeadersMalformed)?;
@@ -136,22 +158,42 @@ pub struct HttpRequest {
     method: HttpMethod,
     resource: String,
     headers: HttpHeaders,
-    body: Vec<String>,
+    body: String,
     version: HttpVersion,
 }
 
+// Completely arbitrary DOS protection
+const MAX_LINE_LENGTH: usize = size_of::<char>() * 80_000;
+
 impl HttpRequest {
-    pub fn from_lines<T>(lines_iter: &mut T) -> Result<Self, HttpRequestValidationErr>
-    where
-        T: Iterator<Item = String>,
-    {
+    pub fn from_stream(stream: &TcpStream) -> Result<Self, HttpRequestValidationErr> {
+        let mut stream_reader = BufReader::new(stream).take(MAX_LINE_LENGTH.try_into().unwrap());
+
         let HttpMethodSection {
             method,
             version,
             resource,
-        } = HttpMethodSection::parse_lines(lines_iter)?;
-        let headers = HttpHeaders::parse_lines(lines_iter)?;
-        let body = HttpBody::parse_lines(lines_iter);
+        } = HttpMethodSection::parse_lines(&mut stream_reader)?;
+
+        let headers = HttpHeaders::parse_lines(&mut stream_reader)?;
+
+        let body = match headers.get("content-length") {
+            Some(vec) => {
+                let content_length = vec
+                    .get(0)
+                    .unwrap()
+                    .parse::<usize>()
+                    .map_err(|_| HttpRequestValidationErr::HeadersMalformed)?;
+
+                let mut buf = vec![0; content_length];
+                stream_reader
+                    .read_exact(&mut buf)
+                    .map_err(|_| HttpRequestValidationErr::BodyMalformed)?;
+                String::from_utf8(buf).map_err(|_| HttpRequestValidationErr::BodyMalformed)
+            }
+            _ => Ok("".to_owned()),
+        }?;
+        // let body = HttpBody::parse_lines(lines_iter);
 
         Ok(HttpRequest {
             method,
