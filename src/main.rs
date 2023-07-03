@@ -1,38 +1,54 @@
 use std::{
     io::Write,
     net::{TcpListener, TcpStream},
-    sync::mpsc,
+    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
 
 use learning_http_chat::*;
 
+/// If this process has this many threads alive at once, do not accept
+/// any more connections.
+const MAX_THREADS: usize = 1000;
 const ADDRESS: &str = "127.0.0.1:8080";
 fn main() {
-    let (tx, rx) = mpsc::channel();
     let listener = TcpListener::bind(ADDRESS).unwrap();
     println!("Listening to {}", ADDRESS);
-    let handler_thread = thread::spawn(move || {
-        for stream in rx {
-            match handle_connection(stream) {
-                Err(errs) => eprintln!("connection error {:?}", errs),
-                _ => (),
+
+    let thread_count = Arc::new(Mutex::new(0));
+    for stream_result in listener.incoming() {
+        let thread_count = thread_count.clone();
+        //Drop the Mutex asap
+        {
+            if *thread_count.lock().unwrap() > MAX_THREADS {
+                eprintln!("Forced to skip connection due to max threads reached");
+                continue;
             }
         }
-    });
 
-    for stream_result in listener.incoming() {
-        match stream_result {
-            Ok(stream) => tx.send(stream).expect("Can't send to thread"),
-            Err(why) => {
-                eprintln!("{:?}", why);
-            }
+        if let Ok(stream) = stream_result {
+            // This implicitly detaches the thread. We're relying on
+            // handle_connection to set timeouts on reading from the stream
+            // to avoid resource leaks.
+            thread::spawn(move || {
+                {
+                    let mut count = thread_count.lock().unwrap();
+                    *count += 1;
+                    println!("Thread Started: {}", *count);
+                }
+                let result = handle_connection(stream);
+                {
+                    let mut count = thread_count.lock().unwrap();
+                    *count -= 1;
+                    println!("Thread Closed: {}", *count);
+                }
+                result
+            });
+        } else {
+            eprintln!("{:#?}", stream_result.err());
         }
     }
-
-    drop(tx);
-    handler_thread.join().unwrap();
 }
 
 const HTTP_VERSION: &str = HttpVersion::Http1_1.as_str();

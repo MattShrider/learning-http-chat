@@ -30,19 +30,6 @@ pub enum HttpMethod {
     DELETE,
 }
 
-// impl HttpMethod {
-//     pub fn parse(method_str: &str) -> Result<Self, HttpRequestValidationErr> {
-//         match method_str.to_uppercase().as_str() {
-//             "GET" => Ok(Self::GET),
-//             "PUT" => Ok(Self::PUT),
-//             "POST" => Ok(Self::POST),
-//             "PATCH" => Ok(Self::PATCH),
-//             "DELETE" => Ok(Self::DELETE),
-//             _ => Err(HttpRequestValidationErr::MethodMalformed),
-//         }
-//     }
-// }
-
 impl TryFrom<&str> for HttpMethod {
     type Error = HttpRequestValidationErr;
 
