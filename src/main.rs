@@ -36,7 +36,7 @@ fn main() {
 }
 
 const HTTP_VERSION: &str = HttpVersion::Http1_1.as_str();
-const STREAM_TIMEOUT: Option<Duration> = Some(Duration::from_millis(100));
+const STREAM_TIMEOUT: Option<Duration> = Some(Duration::from_secs(100));
 fn handle_connection(mut stream: TcpStream) -> Result<(), HttpRequestValidationErr> {
     stream.set_read_timeout(STREAM_TIMEOUT).unwrap();
     stream.set_write_timeout(STREAM_TIMEOUT).unwrap();

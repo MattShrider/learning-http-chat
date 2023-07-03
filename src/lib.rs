@@ -10,7 +10,7 @@ const BUF_CAPACTIY: usize = 1000 * size_of::<char>();
 
 #[derive(Debug)]
 pub enum HttpRequestValidationErr {
-    Headline,
+    Headline(String),
     MethodMissing,
     MethodMalformed,
     ResourceMissing,
@@ -103,10 +103,12 @@ impl HttpMethodSection {
         let mut buffer = String::with_capacity(BUF_CAPACTIY);
         let bytes_read = reader
             .read_line(&mut buffer)
-            .map_err(|_| HttpRequestValidationErr::Headline)?;
+            .map_err(|e| HttpRequestValidationErr::Headline(e.to_string()))?;
 
         if bytes_read == 0 {
-            return Err(HttpRequestValidationErr::Headline);
+            return Err(HttpRequestValidationErr::Headline(
+                "No bytes read in headline".to_owned(),
+            ));
         }
 
         let mut head_iter = buffer.split_whitespace();
