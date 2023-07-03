@@ -5,6 +5,8 @@ use std::{
     net::TcpStream,
 };
 
+mod chat;
+
 /// Default capacity when reading lines
 const BUF_CAPACTIY: usize = 1000 * size_of::<char>();
 
@@ -45,6 +47,60 @@ impl TryFrom<&str> for HttpMethod {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct HttpPath {
+    pub path: String,
+    pub search_params: Option<String>,
+}
+
+impl HttpPath {
+    /// The following rules are applied:
+    /// * `.path`
+    ///   * Whitespace is removed
+    ///   * Always starts with a leading `/`
+    ///   * Never ends with a trailing `/` (Unless the path is exactly `"/"`)
+    /// * `.search_params`
+    ///   * whitespace is removed
+    fn fix(&mut self) -> () {
+        let mut path = self.path.clone();
+        path = path.trim().replace(" ", "").replace("//", "/");
+        if path.ends_with("/") {
+            path.pop();
+        }
+        if !path.starts_with("/") {
+            path = format!("/{path}");
+        }
+
+        let params = self
+            .search_params
+            .clone()
+            .map(|p| p.trim().replace(" ", ""));
+
+        self.path = path;
+        self.search_params = params;
+    }
+}
+
+impl From<&str> for HttpPath {
+    fn from(value: &str) -> Self {
+        Self::from(value.to_owned())
+    }
+}
+
+impl From<String> for HttpPath {
+    fn from(value: String) -> Self {
+        let (path, search_params) = match value.split_once("?") {
+            Some((path, params)) => (path.to_string(), Some(params)),
+            None => (value, None),
+        };
+        let mut result = HttpPath {
+            path: path.to_string(),
+            search_params: search_params.map(|p| p.to_string()),
+        };
+        result.fix();
+        result
+    }
+}
 #[derive(Debug)]
 pub enum HttpVersion {
     Http1_1,
@@ -166,7 +222,7 @@ struct HttpBody(Option<String>);
 #[derive(Debug)]
 pub struct HttpRequest {
     pub method: HttpMethod,
-    pub resource: String,
+    pub resource: HttpPath,
     pub headers: HttpHeaders,
     pub body: Option<String>,
     pub version: HttpVersion,
@@ -209,9 +265,26 @@ impl HttpRequest {
         Ok(HttpRequest {
             method,
             version,
-            resource,
+            resource: resource.into(),
             headers,
             body,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn http_path_from() {
+        let http_path = " test//route/?param=//abc&foo/=bar// ";
+        let has = HttpPath::from(http_path);
+        let owned_has = HttpPath::from(http_path.to_owned());
+        let expected = HttpPath {
+            path: "/test/route".to_owned(),
+            search_params: Some("param=//abc&foo/=bar//".to_owned()),
+        };
+        assert_eq!(has, expected);
+        assert_eq!(owned_has, expected);
     }
 }
