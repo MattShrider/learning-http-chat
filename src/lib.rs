@@ -6,7 +6,7 @@ use std::{
 };
 
 /// Default capacity when reading lines
-const BUF_CAPACTIY: usize = 50 * size_of::<char>();
+const BUF_CAPACTIY: usize = 1000 * size_of::<char>();
 
 #[derive(Debug)]
 pub enum HttpRequestValidationErr {
@@ -30,8 +30,23 @@ pub enum HttpMethod {
     DELETE,
 }
 
-impl HttpMethod {
-    pub fn parse(method_str: &str) -> Result<Self, HttpRequestValidationErr> {
+// impl HttpMethod {
+//     pub fn parse(method_str: &str) -> Result<Self, HttpRequestValidationErr> {
+//         match method_str.to_uppercase().as_str() {
+//             "GET" => Ok(Self::GET),
+//             "PUT" => Ok(Self::PUT),
+//             "POST" => Ok(Self::POST),
+//             "PATCH" => Ok(Self::PATCH),
+//             "DELETE" => Ok(Self::DELETE),
+//             _ => Err(HttpRequestValidationErr::MethodMalformed),
+//         }
+//     }
+// }
+
+impl TryFrom<&str> for HttpMethod {
+    type Error = HttpRequestValidationErr;
+
+    fn try_from(method_str: &str) -> Result<Self, Self::Error> {
         match method_str.to_uppercase().as_str() {
             "GET" => Ok(Self::GET),
             "PUT" => Ok(Self::PUT),
@@ -50,18 +65,28 @@ pub enum HttpVersion {
 }
 
 impl HttpVersion {
-    fn parse(word: &str) -> Result<Self, HttpRequestValidationErr> {
-        match word.to_uppercase().as_str() {
-            "HTTP/1.1" => Ok(HttpVersion::Http1_1),
-            "HTTP/2" => Ok(HttpVersion::Http2),
-            _ => Err(HttpRequestValidationErr::HttpVersionMalformed),
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         match self {
             HttpVersion::Http1_1 => "HTTP/1.1",
             HttpVersion::Http2 => "HTTP/2",
+        }
+    }
+}
+
+impl ToString for HttpVersion {
+    fn to_string(&self) -> String {
+        self.as_str().to_owned()
+    }
+}
+
+impl TryFrom<&str> for HttpVersion {
+    type Error = HttpRequestValidationErr;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.to_uppercase().as_str() {
+            "HTTP/1.1" => Ok(HttpVersion::Http1_1),
+            "HTTP/2" => Ok(HttpVersion::Http2),
+            _ => Err(HttpRequestValidationErr::HttpVersionMalformed),
         }
     }
 }
@@ -87,7 +112,7 @@ impl HttpMethodSection {
         let mut head_iter = buffer.split_whitespace();
         let method = head_iter
             .next()
-            .map(HttpMethod::parse)
+            .map(HttpMethod::try_from)
             .ok_or(HttpRequestValidationErr::MethodMissing)??;
         let resource = head_iter
             .next()
@@ -95,7 +120,7 @@ impl HttpMethodSection {
             .ok_or(HttpRequestValidationErr::ResourceMissing)?;
         let version = head_iter
             .next()
-            .map(HttpVersion::parse)
+            .map(HttpVersion::try_from)
             .ok_or(HttpRequestValidationErr::HttpVersionMissing)??;
 
         Ok(HttpMethodSection {
@@ -128,13 +153,12 @@ impl HttpHeaders {
                 break;
             }
 
-            let mut words = line.split(':').map(|w| w.trim().to_owned().to_lowercase());
-            let key = words
-                .next()
+            let (key, value) = line
+                .split_once(':')
+                .map(|(left, right)| (left.trim().to_lowercase(), right.trim().to_owned()))
                 .ok_or(HttpRequestValidationErr::HeadersMalformed)?;
-            let value = words
-                .next()
-                .ok_or(HttpRequestValidationErr::HeadersMalformed)?;
+
+            // .map(|w| w.trim().to_owned().to_lowercase());
 
             if let Some(list) = map.get_mut(&key) {
                 list.push(value);
@@ -192,7 +216,6 @@ impl HttpRequest {
             }
             _ => Ok(None),
         }?;
-        // let body = HttpBody::parse_lines(lines_iter);
 
         Ok(HttpRequest {
             method,
