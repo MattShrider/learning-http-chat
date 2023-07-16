@@ -1,3 +1,13 @@
+# Archived
+
+This project is now archived and will no longer be worked on. The original
+goal of the project was to create an HTTP chat server with zero dependencies,
+but after reaching the point of serializing and deserializing JSON I felt
+scope was too large for a learning project.
+
+A follow-up will be made that allows for some sane dependencies, such as
+serde-json and potentially something like axum or another concurrency runtime.
+
 # learning_http_chat
 
 A learning project to implement an Http server from scratch
